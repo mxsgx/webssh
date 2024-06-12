@@ -96,6 +96,9 @@ jQuery(function($){
 
     for (i=0; i < names.length; i++) {
       name = names[i];
+
+      if (name == 'privatekey' || name == 'private_key') continue;
+
       $('#'+name).val(data.get(name));
     }
   }
@@ -150,9 +153,10 @@ jQuery(function($){
         opts_map[key] = val;
       } else if (key === "private_key") {
         try {
+          console.log({val});
           var pk = JSON.parse(val);
           pk = pk.private_key.replace(/_newline_/g, "\n").replace(/_spasi_/g, " ").replace(/_plus_/g, "+");
-          form_map.privatekey = window.btoa(pk);
+          form_map.privatekey = encode_base64(pk);
         } catch (e) {
           console.error(e);
         }
@@ -853,7 +857,7 @@ jQuery(function($){
     try {
       args = JSON.parse(event.data.connect);
     } catch (SyntaxError) {
-      args = Array.isArray(event.data.connect) ? event.data.connect.split('|') : undefined;
+      args = typeof event.data.connect === 'string' ? event.data.connect.split('|') : event.data.connect;
     }
 
     if (!Array.isArray(args)) {
