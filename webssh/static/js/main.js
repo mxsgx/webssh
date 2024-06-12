@@ -55,7 +55,7 @@ jQuery(function($){
       messages = {1: 'This client is connecting ...', 2: 'This client is already connnected.'},
       key_max_size = 16384,
       fields = ['hostname', 'port', 'username'],
-      form_keys = fields.concat(['password', 'totp']),
+      form_keys = fields.concat(['password', 'totp', 'privatekey', 'passphrase']),
       opts_keys = ['bgcolor', 'title', 'encoding', 'command', 'term', 'fontsize', 'fontcolor', 'cursor'],
       url_form_data = {},
       url_opts_data = {},
@@ -116,7 +116,7 @@ jQuery(function($){
   }
 
 
-  function decode_password(encoded) {
+  function decode_base64(encoded) {
     try {
       return window.atob(encoded);
     } catch (e) {
@@ -124,6 +124,15 @@ jQuery(function($){
     }
     return null;
   }
+
+  function encode_base64(str) {
+    try {
+      return window.btoa(str);
+    } catch (e) {
+      console.error(e);
+    }
+    return null;
+  } 
 
 
   function parse_url_data(string, form_keys, opts_keys, form_map, opts_map) {
@@ -139,11 +148,27 @@ jQuery(function($){
         form_map[key] = val;
       } else if (opts_keys.indexOf(key) >=0) {
         opts_map[key] = val;
+      } else if (key === "private_key") {
+        try {
+          var pk = JSON.parse(val);
+          pk = pk.private_key.replace(/_newline_/g, "\n").replace(/_spasi_/g, " ").replace(/_plus_/g, "+");
+          form_map.privatekey = window.btoa(pk);
+        } catch (e) {
+          console.error(e);
+        }
       }
     }
 
     if (form_map.password) {
-      form_map.password = decode_password(form_map.password);
+      form_map.password = decode_base64(form_map.password);
+    }
+
+    if (form_map.privatekey) {
+      form_map.privatekey = decode_base64(form_map.privatekey);
+    }
+
+    if (form_map.passphrase) {
+      form_map.passphrase = decode_base64(form_map.passphrase);
     }
   }
 
@@ -721,7 +746,8 @@ jQuery(function($){
     // use data from the arguments
     var form = document.querySelector(form_id),
         url = data.url || form.action,
-        _xsrf = form.querySelector('input[name="_xsrf"]');
+        _xsrf = form.querySelector('input[name="_xsrf"]'),
+        formdata = new FormData();
 
     var result = validate_form_data(wrap_object(data));
     if (!result.valid) {
@@ -735,14 +761,32 @@ jQuery(function($){
       data._origin = event_origin;
     }
 
+    Object.keys(data).forEach(function (key) {
+      if (key === 'privatekey') {
+        var pk = new File([data[key]], 'default', {
+          type: 'text/plain',
+          lastModified: new Date(),
+        });
+  
+        formdata.append(key, pk);
+
+        return;
+      }
+
+      formdata.append(key, data[key]);
+    });
+
     status.text('');
     button.prop('disabled', true);
 
     $.ajax({
         url: url,
         type: 'post',
-        data: data,
-        complete: ajax_complete_callback
+        data: formdata,
+        complete: ajax_complete_callback,
+        cache: false,
+        contentType: false,
+        processData: false
     });
 
     return result;
@@ -798,14 +842,18 @@ jQuery(function($){
 
   function cross_origin_connect(event)
   {
+    if (!event.data.connect) {
+      return;
+    }
+
     console.log(event.origin);
     var prop = 'connect',
         args;
 
     try {
-      args = JSON.parse(event.data);
+      args = JSON.parse(event.data.connect);
     } catch (SyntaxError) {
-      args = event.data.split('|');
+      args = Array.isArray(event.data.connect) ? event.data.connect.split('|') : undefined;
     }
 
     if (!Array.isArray(args)) {
